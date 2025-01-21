@@ -11,3 +11,15 @@ My Python interface makes it easy to analyze patterns like:
 
 I've wrapped all the Neo4j database operations in a nice interface, so I don't have to write raw database queries every time I want to analyze the data. Each incident is stored as a node in the graph database with details like where it happened, when it occurred, who did it, and how many people were affected.
 
+## Downloading the dataset
+
+The dataset is available at https://www.kaggle.com/datasets/START-UMD/gtd # TODO: Clean the dataset. OpenRefine didn't work.
+
+## Setup
+
+To setup the Neo4j container, run `setup_neo4j_container.sh`.
+
+# Usage 
+
+To run the query, run `query.py`.
+
