@@ -22,16 +22,13 @@ podman run -d \
 echo "Waiting for Neo4j to initialize..."
 sleep 30  
 
-# Step 4: Copy the cleaned dataset into the container
-podman cp globalterrorismdb-0718dist-csv.csv neo4j:/var/lib/neo4j/import/
+# Step 4: Copy the original dataset into the container
+podman cp globalterrorismdb_0718dist.csv neo4j:/var/lib/neo4j/import/
 
-# Step 5: Import data into Neo4j with all columns
+# Step 5: Import data into Neo4j with quote handling
 cat <<EOF | podman exec -i neo4j cypher-shell -u neo4j -p password
 CALL apoc.periodic.iterate(
-  '
-  LOAD CSV WITH HEADERS FROM "file:///globalterrorismdb-0718dist-csv.csv" AS row
-  RETURN row
-  ',
+  "LOAD CSV WITH HEADERS FROM 'file:///globalterrorismdb_0718dist.csv' AS row RETURN row",
   '
   MERGE (i:Incident {eventid: row.eventid})
   SET i.iyear = CASE WHEN row.iyear IS NOT NULL AND row.iyear <> "" THEN toInteger(row.iyear) ELSE null END,
