@@ -1,0 +1,756 @@
+#!/usr/bin/env bash
+
+########################################################## 
+#               OpenRefine Control System             #
+##########################################################
+
+# -------------- utility functions ----------------------
+
+fail () {
+   cat <<EOF
+ERROR: $1
+Type '$0 -h' for usage information.
+EOF
+exit 1
+}
+
+error() {
+    echo "Error: $1"
+    exit 1
+}
+
+warn() {
+    echo "Warning: $1"
+    exit 0
+}
+
+usage() {
+cat <<EOF
+Usage: $0 [options] <action>
+Options
+    -c <path>                     Path to refine.ini file. Default: ./refine.ini.
+    -d <path>                     Path to the data directory. Default: OS dependent.
+    -H <host>                     Expected host header value (set to * to disable checks). Default: <interface>.
+    -h                            Print this message and exit.
+    -i <interface>                The network interface OpenRefine should bind to. Default: 127.0.0.1.
+    -m <memory>                   JVM min and max memory heap size. Default: 1400M.
+    -p <port>                     Port that OpenRefine will listen to. Default: 3333.
+    -v <level>                    Verbosity level [error,warn,info,debug,trace]. Default: info.
+    -w <path>                     Path to the webapp. Default: main/webapp.
+    -x <name=value>               Additional configuration parameters to pass to OpenRefine.
+    --debug                       Enable JVM debugging (on port 8000).
+    --jmx                         Enable JMX monitoring.
+
+Actions
+    run                           Run OpenRefine [default].
+    build                         Build OpenRefine.
+    clean                         Clean compiled classes.
+    test                          Run all tests.
+    extensions_test               Run the extensions tests.
+    server_test                   Run the server tests.
+    e2e_tests                     Run the e2e tests.
+    lint                          Reformat the source code according to OpenRefine's conventions.
+    mac_dist <version>            Make MacOS binary distribution.
+    windows_dist <version>        Make Windows binary distribution.
+    linux_dist <version>          Make Linux binary distribution.
+    dist <version>                Make all distributions.
+EOF
+exit 1
+}
+
+
+add_option() {
+    if [ ! -z "$*" ] ; then
+        OPTS+=("$@")
+    fi
+}
+                
+load_configs() {
+   TEMP_CONFIG=$(mktemp -t refine.XXXXXXX)
+   if [ "${TEMP_CONFIG}" = "" ] ; then
+       error "Could not create temporary file to load configurations"
+   fi
+   cat $1 | egrep "^[A-Z]" | sed 's/^\([^=]*\)=\(.*\)$/export \1=(\2)/' > ${TEMP_CONFIG}
+   . ${TEMP_CONFIG}
+   rm ${TEMP_CONFIG}
+}
+                    
+check_macosx() {
+    if [ "$OS" != "macosx" ] ; then
+        error "This action can only run on MacOSX"
+    fi
+}
+
+check_downloaders() {
+    CURL="`command -v curl 2> /dev/null`"
+    WGET="`command -v wget 2> /dev/null`"
+
+    if [ -z "$CURL" ] && [ -z "$WGET" ] ; then
+        error "We need either 'curl' or 'wget' present in PATH to download external dependencies."
+    fi
+}
+
+check_running() {
+    check_downloaders
+    URL="http://${REFINE_HOST_INTERNAL}:${REFINE_PORT}/"
+    CHECK_STR="<title>OpenRefine</title>"
+
+    if [ "$CURL" ] ; then
+        curl --noproxy 127.0.0.1 -s -S -f $URL > /dev/null 2>&1
+        CURL_RETURN=$?
+        if [ $CURL_RETURN -eq "7" ] || [ $CURL_RETURN -eq "22" ]  ; then
+            NOT_RUNNING="1"
+        fi
+    elif [ "$WGET" ] ; then
+        no_proxy=127.0.0.1 wget -O - $URL > /dev/null 2>&1  
+        if [ "$?" = "4" ] ; then
+            NOT_RUNNING="1"
+        fi
+    fi    
+
+    if [ -z "${NOT_RUNNING}" ] ; then
+        if [ "$CURL" ] ; then
+            RUNNING=`curl --noproxy 127.0.0.1 -s $URL | grep "$CHECK_STR"`
+        elif [ "$WGET" ] ; then
+            RUNNING=`no_proxy=127.0.0.1 wget -O - $URL| grep "$CHECK_STR"` 
+        fi    
+        
+        if [ -z "${RUNNING}" ] ; then
+            error "OpenRefine isn't running on $URL. Maybe a proxy issue?"
+        fi
+    else
+        RUNNING=""
+    fi
+}
+
+get_version() {
+    VERSION="$1"
+    
+    if [ -z "$VERSION" ] ; then
+        fail "Must specify a version number"
+    fi
+
+    NUM_VERSION=`echo $VERSION | sed -E 's/-.*//g'`
+    
+    if [ "${NUM_VERSION}" = "" ] ; then
+        fail "${VERSION} is not a valid version number"
+    fi
+    
+    if [ "`echo "${NUM_VERSION}" | egrep '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'`" = "${NUM_VERSION}" ] ; then
+        FULL_VERSION="${NUM_VERSION}"
+    elif [ "`echo "${NUM_VERSION}" | egrep '^[0-9]+\.[0-9]+\.[0-9]+$'`" = "${NUM_VERSION}" ] ; then
+        FULL_VERSION="${NUM_VERSION}.0"
+    elif [ "`echo "${NUM_VERSION}" | egrep ''^[0-9]+\.[0-9]+$''`" = "${NUM_VERSION}" ] ; then
+        FULL_VERSION="${NUM_VERSION}.0.0"
+    elif [ "`echo "${NUM_VERSION}" | egrep '^[0-9]+$'`" = "${NUM_VERSION}" ] ; then
+        FULL_VERSION="${NUM_VERSION}.0.0.0"
+    else 
+        fail "${VERSION} is not a valid version number"
+    fi
+}
+
+get_revision() {
+    if [ -d ".svn" ] ; then
+        INFO=`svn info`
+        REVISION=`echo $INFO | sed s/^$VERSION-//`
+    elif [ -d ".git" ] ; then
+        INFO=`git describe`
+        REVISION=`echo $INFO`
+    REVISION=${REVISION:4}
+    else
+        error "cannot obtain revision, exiting!"
+    fi
+}
+    
+download() {
+    URL=$1
+    DEST=$2
+    
+    check_downloaders
+    
+    if [ "$CURL" ] ; then
+        curl -L -o $DEST $URL || exit "Error while downloading $URL"
+    elif [ "$WGET" ] ; then
+        wget -O $DEST $URL || error "Error while downloading $URL"
+    fi
+}
+
+load_data() {
+    FILE=$1
+    NAME=$2
+    URL="http://${REFINE_HOST_INTERNAL}:${REFINE_PORT}/command/core/create-project-from-upload"
+    CURL="`command -v curl 2> /dev/null`"
+    
+    if [ -z "$CURL" ] ; then
+        error "We need 'curl' present in PATH to upload data to OpenRefine."
+    else
+        curl -s -F "project-file=@$FILE" -F "project-name=$NAME" $URL > /dev/null || error "Error while uploading $FILE to OpenRefine"
+        echo "Loaded $FILE as $NAME"
+    fi
+}
+
+display() {
+    FILE=$1
+    if [ "$OS" = "macosx" ] ; then
+    open $FILE
+    elif [ "$OS" = "linux" ] ; then
+    gnome-open $FILE
+    else
+    notepad $FILE
+    fi  
+
+}
+# ----------------------------------------------------------------------------------------------
+
+build_prepare() {
+    if [ ! -d $REFINE_BUILD_DIR ] ; then 
+        mkdir $REFINE_BUILD_DIR || error "Error while making directory $REFINE_BUILD_DIR"
+    fi
+    NPM_VERSION=`npm -v`
+    if [ $? -ne 0 ] ; then
+        error "NPM not found. We need it in the PATH to download frontend dependencies. See https://openrefine.org/docs/technical-reference/build-test-run#nodejs"
+    else
+        echo "Using NPM version $NPM_VERSION"
+    fi
+    ( cd main/webapp && npm install )
+}
+
+dist_prepare() {
+    if [ ! -d $REFINE_DIST_DIR ] ; then 
+        mkdir $REFINE_DIST_DIR || error "Error while making directory $REFINE_DIST_DIR"
+    fi
+}
+
+tools_prepare() {
+    if [ ! -d $REFINE_TOOLS_DIR ] ; then 
+        mkdir $REFINE_TOOLS_DIR || error "Error while making directory $REFINE_TOOLS_DIR"
+    fi
+}
+
+mvn_prepare() {
+    tools_prepare
+    if [ "$MAVEN_HOME" ] ; then
+        MVN="$MAVEN_HOME/bin/mvn"
+    elif [ "$M2_HOME" ] ; then
+        MVN="$M2_HOME/bin/mvn"
+    else
+        MVN="`command -v mvn 2> /dev/null`"
+    fi
+
+    if [ ! -x "$MVN" ] ; then
+        error "Apache Maven not found. Please make sure that M2_HOME or MAVEN_HOME environment variables are set or that 'mvn' is in your system PATH."
+    fi
+}
+# ----------------------------------------------------------------------------------------------
+
+do_mvn() {
+    mvn_prepare
+
+    "$MVN" $MVN_PARAMS -Dversion="$VERSION" -Dfull_version="$FULL_VERSION"  $1 || error "Error while running maven task '$1'"
+}
+
+# ----------------------------------------------------------------------------------------------
+
+lint() {
+    mvn_prepare
+    "$MVN" formatter:format impsort:sort
+}
+
+# ----------------------------------------------------------------------------------------------
+
+dist() {
+    get_version $1
+    build_prepare
+    mvn_prepare
+    "$MVN" versions:set -DnewVersion="$VERSION"
+    "$MVN" package
+}
+
+windows_dist() {
+    get_version $1
+    build_prepare
+    mvn_prepare
+    "$MVN" versions:set -DnewVersion="$VERSION"
+    "$MVN" package -P windows
+}
+
+linux_dist() {
+    get_version $1
+    build_prepare
+    mvn_prepare
+    "$MVN" versions:set -DnewVersion="$VERSION"
+    "$MVN" package -P linux
+}
+
+# Kept just in case someone wants to follow this workflow on a mac,
+# but no longer needed as "mvn package" does it directly on both mac and linux.
+mac_dist() {
+    check_macosx
+    build_prepare
+    dist_prepare
+    get_version $1
+    get_revision
+
+    appbundler_prepare
+
+    ANT_PARAMS="-Dappbundler.dir=${REFINE_TOOLS_DIR}/${APPBUNDLER_DIR}"
+    ant mac
+
+    mkdir -p "$REFINE_BUILD_DIR/mac/.background"
+    cp graphics/dmg_background/dmg_background.png "$REFINE_BUILD_DIR/mac/.background/dmg_background.png"
+
+    SIZE=350
+
+    if [ -f "$REFINE_BUILD_DIR/temp_refine.dmg" ] ; then
+        rm "$REFINE_BUILD_DIR/temp_refine.dmg"
+    fi
+
+# Sign the bundle with a self-signed cert so OS X doesn't frustrate users by making app invisible
+    codesign --deep -s "OpenRefine Code Signing" "$REFINE_BUILD_DIR/mac/OpenRefine.app"
+    spctl --assess --type execute --verbose=4 "$REFINE_BUILD_DIR/mac/OpenRefine.app"
+
+    TITLE="OpenRefine $VERSION"
+    echo "Building MacOSX DMG for $TITLE"
+    hdiutil create -srcfolder "$REFINE_BUILD_DIR/mac" -volname "$TITLE" -fs HFS+ -fsargs "-c c=64,a=16,e=16" -format UDRW -size ${SIZE}m "$REFINE_BUILD_DIR/temp_refine.dmg" || error "can't create empty DMG"
+    DEVICE=`hdiutil attach -readwrite -noverify -noautoopen "$REFINE_BUILD_DIR/temp_refine.dmg" | egrep '^/dev/' | sed -e "s/^\/dev\///g" -e 1q  | awk '{print $1}'`
+    echo $DEVICE
+    hdiutil attach "$REFINE_BUILD_DIR/temp_refine.dmg" || error "Can't attach temp DMG"
+
+    echo '
+       tell application "Finder"
+         tell disk "'$TITLE'"
+            open
+            set current view of container window to icon view
+            set toolbar visible of container window to false
+            set statusbar visible of container window to false
+            set the bounds of container window to {200, 100, 760, 460}
+            set theViewOptions to the icon view options of container window
+            set arrangement of theViewOptions to not arranged
+            set icon size of theViewOptions to 100
+            set background picture of theViewOptions to file ".background:dmg_background.png"
+            make new alias file at container window to POSIX file "/Applications" with properties {name:"Applications"}
+            set position of item "OpenRefine" of container window to {170, 175}
+            set position of item "Applications" of container window to {380, 175}
+            close
+            open
+            update without registering applications
+            delay 5
+            eject
+         end tell
+       end tell
+    ' | osascript || error "Error running applescript"
+
+    sync
+    sync
+    sleep 3
+    hdiutil detach $DEVICE
+
+    if [ -f "$REFINE_DIST_DIR/openrefine-mac-$VERSION.dmg" ] ; then
+        rm "$REFINE_DIST_DIR/openrefine-mac-$VERSION.dmg"
+    fi
+
+    hdiutil convert "$REFINE_BUILD_DIR/temp_refine.dmg" -format UDZO -imagekey zlib-level=9 -o "$REFINE_DIST_DIR/openrefine-mac-$VERSION.dmg" || error "Error compressing DMG"
+    hdiutil internet-enable -yes "$REFINE_DIST_DIR/openrefine-mac-$VERSION.dmg" || error "Error internet-enabling DMG"
+
+    rm -f "$REFINE_BUILD_DIR/temp_refine.dmg"
+}
+
+test() {
+    mvn_prepare
+    $MVN test
+}
+
+
+e2e_tests() {
+    get_revision
+
+    CYPRESS_RECORD=0
+
+    if [ -z "$CYPRESS_BROWSER" ] ; then
+        CYPRESS_BROWSER="electron"
+    fi
+
+    if [ -z "$CYPRESS_SPECS" ] ; then
+        CYPRESS_SPECS="cypress/e2e/**/*.cy.js"
+    fi
+
+    if [ ! -z "$CYPRESS_PROJECT_ID" ] && [ ! -z "$CYPRESS_RECORD_KEY" ] ; then
+        CYPRESS_RECORD=1
+        echo "Tests will be recorded in Cypress Dashboard"
+    elif [ ! -z "$CYPRESS_PROJECT_ID" ] && [ -z "$CYPRESS_RECORD_KEY" ] ; then
+        echo "Found a Cypress project id but no record key - disabling recording in the Cypress Dashboard"
+    fi
+
+    REFINE_DATA_DIR="${TMPDIR:=/tmp}/openrefine-tests"
+
+    add_option "-Drefine.headless=true"
+    add_option "-Drefine.autoreload=false"
+    add_option "-Dbutterfly.autoreload=false"
+
+    check_running
+
+    if [ "$RUNNING" ] ; then
+        echo "An OpenRefine server is already running. Please shut it down so that we can start a test server."
+        exit
+    fi
+
+    echo "Starting OpenRefine server"
+
+    run fork > /dev/null
+
+    echo "Waiting for OpenRefine to load..."
+    sleep 5
+    check_running
+    if [ -z "$RUNNING" ] ; then
+        sleep 10
+    fi
+    echo "... proceed with the tests."
+    echo ""
+
+    echo "Starting Cypress..."
+    # Cypress needs a unique group id
+    # We're hashing the list of files to generate such Group Id
+    CYPRESS_GROUP=$(echo $CYPRESS_BROWSER$CYPRESS_SPECS | shasum)
+    CYPRESS_RUN_CMD="yarn --cwd ./main/tests/cypress run cypress run --spec "$CYPRESS_SPECS" --browser $CYPRESS_BROWSER  --headless --quiet --reporter list --env DISABLE_PROJECT_CLEANUP=1,OPENREFINE_URL=http://$REFINE_HOST_INTERNAL:$REFINE_PORT"
+    if [ "$CYPRESS_RECORD" = "1" ] ; then
+        # if tests are recorded, project id is added to env vars, and --record flag is added to the cmd-line
+        export CYPRESS_PROJECT_ID=$CYPRESS_PROJECT_ID
+        CYPRESS_RUN_CMD="$CYPRESS_RUN_CMD --record --key $CYPRESS_RECORD_KEY --ci-build-id=$CYPRESS_CI_BUILD_ID --tag $CYPRESS_BROWSER --group "$CYPRESS_GROUP""
+    fi
+    export MOZ_FORCE_DISABLE_E10S=1
+    echo $CYPRESS_RUN_CMD
+    $CYPRESS_RUN_CMD
+
+    if [ "$?" = "0" ] ; then
+        UI_TEST_SUCCESS="1"
+    else
+        UI_TEST_SUCCESS="0"
+    fi
+
+    if [ "$CYPRESS_RECORD" = "1" ] ; then
+        echo "You can review tests on Cypress.io: https://dashboard.cypress.io/projects/$CYPRESS_PROJECT_ID/runs"
+    fi
+
+    echo ""
+    echo "Killing OpenRefine"
+    /bin/kill -9 $REFINE_PID
+    echo "Cleaning up"
+    rm -rf "$REFINE_DATA_DIR"
+
+    if [ "$UI_TEST_SUCCESS" = "0" ] ; then
+        error "The UI test suite failed."
+    fi
+}
+
+
+server_test() {
+    mvn_prepare
+    $MVN test -f main
+}
+
+extensions_test() {
+    mvn_prepare
+    $MVN test -f extensions
+}
+
+run() {
+    FORK=$1
+
+    check_running
+
+    if [ "$RUNNING" ] ; then
+        warn "OpenRefine is already running."
+    fi
+
+    if [ ! -d $REFINE_CLASSES_DIR ] ; then
+        IS_JAR=`ls $REFINE_LIB_DIR | grep openrefine`
+        if [ -z "$IS_JAR" ] ; then
+            mvn_prepare
+            build_prepare
+            $MVN process-resources
+            $MVN compile test-compile || exit
+            echo ""
+        fi
+    fi
+
+    freeRam=UNKNOWN
+    if [ "$OS" = "macosx" ] ; then
+        freeRam=$(top -l 1 | grep PhysMem | awk '{print $6}' | tr -d M)
+    elif [ "$OS" = "linux" ] ; then
+        freeRam=$(free -m | grep -oP '\d+' | head -n 1)
+    fi
+
+    echo "-------------------------------------------------------------------------------------------------"
+    echo You have "$freeRam"M of free memory.
+    echo Your current configuration is set to use $REFINE_MEMORY of memory.
+    echo OpenRefine can run better when given more memory. Read our FAQ on how to allocate more memory here:
+    echo https://openrefine.org/docs/manual/installing\#increasing-memory-allocation
+    echo "-------------------------------------------------------------------------------------------------"
+
+    if [ -d $REFINE_CLASSES_DIR ] ; then
+        add_option "-Drefine.autoreload=true" "-Dbutterfly.autoreload=true"
+    fi
+
+    if [ "$OS" = "macosx" ] ; then
+        add_option '-Xdock:icon=graphics/icon/openrefine.icns'
+    fi
+
+    if [ "$REFINE_DATA_DIR" ] ; then
+        add_option "-Drefine.data_dir=$REFINE_DATA_DIR"
+    fi
+
+    if [ "$REFINE_WEBAPP" ] ; then
+        add_option "-Drefine.webapp=$REFINE_WEBAPP"
+    fi
+
+    if [ "$REFINE_PORT" ] ; then
+        add_option "-Drefine.port=$REFINE_PORT"
+    fi
+
+    if [ "$REFINE_INTERFACE" ] ; then
+        add_option "-Drefine.interface=$REFINE_INTERFACE"
+    fi
+
+    if [ "$REFINE_HOST" ] ; then
+        add_option "-Drefine.host=$REFINE_HOST"
+    fi
+
+    if [ "$REFINE_AUTOSAVE_PERIOD" ] ; then
+        add_option "-Drefine.autosave=$REFINE_AUTOSAVE_PERIOD"
+    fi
+
+    CLASSPATH="$REFINE_CLASSES_DIR${SEP}$REFINE_LIB_DIR/*"
+
+    RUN_CMD=("$JAVA" -cp "$CLASSPATH" "${OPTS[@]}" "com.google.refine.Refine")
+
+    echo ""
+
+    if [ -z "$FORK" ] ; then
+        exec "${RUN_CMD[@]}"
+    else
+        "${RUN_CMD[@]}" &
+        REFINE_PID="$!"
+    fi
+}
+
+checkJavaMajorVersion() {
+  java_ver=$("$JAVA" -version 2>&1 | grep version | cut -d ' ' -f 3 | tr -d \")
+  # Java 6, 7, 8 starts with 1.x
+  if [ ${java_ver:0:2} == "1." ] ; then
+    major=`echo ${java_ver} | sed -E 's/1\.([0-9])[0-9_.]{2,6}/\1/g'`
+  else
+    # Java 9+ starts with x using semver versioning
+    major=`echo ${java_ver} | sed -E 's/([0-9]+)(-ea|(\.[0-9]+)*)/\1/g'`
+  fi
+  if (( ${major} < 11 )); then
+    error "OpenRefine requires Java version 11 or later. If you have multiple versions of Java installed, please set the environment variable JAVA_HOME to the correct version."
+  fi
+  if (( ${major} > 21 )); then
+    echo "WARNING: OpenRefine is not tested and not recommended for use with Java versions greater than 21."
+  fi
+}
+
+# -------------------------- script -----------------------------
+
+# ----- Normalize the current directory -------------------------
+
+cd `dirname $0`
+
+# ----- Default values ------------------------------------------
+
+OPTS=()
+
+# ---- OS-specific support --------------------------------------
+
+SYSTEM=`uname`
+
+case "$SYSTEM" in
+  CYGWIN*) OS="windows" ;;
+  Darwin*) OS="macosx"  ;;
+  Linux*)  OS="linux"   ;;
+  *) OS="other" ;;
+esac
+
+SEP=":"
+if [ "$OS" = "windows" ] ; then
+    SEP=";"
+fi
+
+# ----- Check for custom ini file /c option  ---------------------------------
+args=()
+while [ $# -ne 0 ] ; do
+  case "$1" in
+    -c) REFINE_INI_PATH="$2"; shift 2; continue;;
+    *) args+=("$1"); shift;;
+  esac
+done
+
+# -- Read ini file ------------------------------------------------------------
+
+if [ -z $REFINE_INI_PATH ]; then
+  REFINE_INI_PATH=refine.ini
+fi
+
+if [ ! -f "$REFINE_INI_PATH" ]; then
+  error "$REFINE_INI_PATH is not a valid filename"
+fi
+
+echo "Using ${REFINE_INI_PATH} for configuration"
+load_configs $REFINE_INI_PATH
+
+# ----- Parse the command line args -------------------------------------------
+for ((i=0; i<${#args[@]}; i+=1)); do
+  arg="${args[i]}"
+  case "$arg" in
+    -h) usage;;
+    -p) ((i+=1)); REFINE_PORT="${args[i]}"; continue;;
+    -H) ((i+=1)); REFINE_HOST="${args[i]}"; continue;;
+    -i) ((i+=1)); REFINE_INTERFACE="${args[i]}"; continue;;
+    -w) ((i+=1)); REFINE_WEBAPP="${args[i]}"; continue;;
+    -d) ((i+=1)); REFINE_DATA_DIR="${args[i]}"; continue;;
+    -m) ((i+=1)); REFINE_MEMORY="${args[i]}"; REFINE_MIN_MEMORY="${args[i]}"; continue;;
+    -v) ((i+=1)); REFINE_VERBOSITY="${args[i]}"; continue;;
+    -x) ((i+=1)); REFINE_EXTRA_OPTS="${args[i]}"; continue;;
+    --debug) add_option '-Xdebug' '-Xrunjdwp:transport=dt_socket,address=8000,server=y,suspend=n'; continue;;
+    --jmx) add_option '-Dcom.sun.management.jmxremote'; continue;;
+    -*) echo "Invalid option: $arg" >&2; exit 1;;
+    *) ACTION="$arg"; break;;
+  esac
+done
+
+if [ -z "$ACTION" ] ; then
+    ACTION="run"
+fi
+
+# --- Check Java --------------------------------------------------------------
+
+if [ "$OS" = "macosx" ] ; then
+    if [ -z "$JAVA_HOME" ] ; then
+    # We need want recent Java because we're bundling JRE - may want to warn and force developer to set JAVA_HOME
+    # The /usr/libexec/java_home utility may be tied to the Java prefs app, so could go away when Apple removes it
+        export JAVA_HOME=$(/usr/libexec/java_home)
+    fi
+fi
+
+if [ "$JAVA_HOME" ] ; then
+    JAVA="$JAVA_HOME/bin/java"
+else
+    JAVA="`command -v java 2> /dev/null`"
+fi
+
+if [ ! -x "$JAVA" ] ; then
+    error "Could not find the 'java' executable at '$JAVA', are you sure your JAVA_HOME environment variable is pointing to a proper java installation?"
+fi
+
+checkJavaMajorVersion
+
+# ----- Verify and Set Required Environment Variables -------------------------
+
+if [ -z "$JAVA_OPTIONS" ] ; then
+  JAVA_OPTIONS=""
+fi
+add_option "${JAVA_OPTIONS[@]}"
+
+if [ -z "$REFINE_MEMORY" ] ; then
+    REFINE_MEMORY="1024M"
+fi
+if [ -z "$REFINE_MIN_MEMORY" ] ; then
+    REFINE_MIN_MEMORY="256M"
+fi
+add_option "-Xms$REFINE_MIN_MEMORY" "-Xmx$REFINE_MEMORY" "-Drefine.memory=$REFINE_MEMORY"
+
+if [ -z "$REFINE_MAX_FORM_CONTENT_SIZE" ] ; then
+    REFINE_MAX_FORM_CONTENT_SIZE="1048576"
+fi
+add_option "-Drefine.max_form_content_size=$REFINE_MAX_FORM_CONTENT_SIZE"
+
+if [ -z "$REFINE_PORT" ] ; then
+    REFINE_PORT="3333"
+fi
+
+if [ -z "$REFINE_INTERFACE" ] ; then
+    REFINE_INTERFACE="127.0.0.1"
+fi
+
+if [ -z "$REFINE_HOST" ] ; then
+    if [ "$REFINE_INTERFACE" = "0.0.0.0" ] ; then
+        REFINE_HOST='*'
+    else
+        REFINE_HOST="$REFINE_INTERFACE"
+    fi
+fi
+
+if [ "$REFINE_HOST" = '*' ] ; then
+    echo No host specified while binding to interface 0.0.0.0, guessing localhost.
+    REFINE_HOST_INTERNAL="localhost"
+else
+    REFINE_HOST_INTERNAL="$REFINE_HOST"
+fi
+
+if [ -z "$REFINE_WEBAPP" ] ; then
+    REFINE_WEBAPP="main/webapp"
+fi
+
+if [ -z "$REFINE_TEST_DIR" ] ; then
+    REFINE_TEST_DIR="main/tests"
+fi
+
+if [ -z "$REFINE_CLASSES_DIR" ] ; then
+    REFINE_CLASSES_DIR="server/classes"
+fi
+
+if [ -z "$REFINE_LIB_DIR" ] ; then
+    REFINE_LIB_DIR="server/target/lib"
+fi
+
+if [ -z "$REFINE_BUILD_DIR" ] ; then
+    REFINE_BUILD_DIR="build"
+fi
+
+if [ -z "$REFINE_TOOLS_DIR" ] ; then
+    REFINE_TOOLS_DIR="tools"
+fi
+
+if [ -z "$REFINE_DIST_DIR" ] ; then
+    REFINE_DIST_DIR="dist"
+fi
+
+if [ -z "$REFINE_VERBOSITY" ] ; then
+    REFINE_VERBOSITY="info"
+fi
+add_option "-Drefine.verbosity=$REFINE_VERBOSITY"
+
+if [ ! -z "$REFINE_EXTRA_OPTS" ] ; then
+    add_option "-D$REFINE_EXTRA_OPTS"
+fi
+
+if [ -z "$JYTHONPATH" ] ; then
+    JYTHONPATH="$REFINE_WEBAPP/WEB-INF/lib/jython"
+else
+    JYTHONPATH="$REFINE_WEBAPP/WEB-INF/lib/jython${SEP}$JYTHONPATH"
+fi
+
+add_option "-Dpython.path=$JYTHONPATH"
+add_option "-Dpython.cachedir=$HOME/.local/share/google/refine/cachedir"
+
+# ----- Respond to the action given --------------------------------------------
+case "$ACTION" in
+  build) build_prepare; do_mvn process-resources; do_mvn compile\ test-compile;;
+  clean) do_mvn clean;;
+  test) test $1;;
+  tests) test $1;;
+  e2e_tests) e2e_tests;;
+  server_test) server_test $1;;  
+  server_tests) server_test $1;;  
+  extensions_test) extensions_test $1;;
+  extensions_tests) extensions_test $1;;
+  run) run;;
+  lint) lint;;
+  mac_dist) mac_dist $1;;
+  windows_dist) windows_dist $1;;
+  linux_dist) linux_dist $1;;
+  dist) dist $1;;
+  *) echo "Unknown Refine command called \"$ACTION\", type \"./refine -h\" for proper usage.";;
+esac
+
+# ----------- end of file --------------------

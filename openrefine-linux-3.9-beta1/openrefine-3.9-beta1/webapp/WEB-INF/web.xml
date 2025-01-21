@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app 
+   xmlns="http://xmlns.jcp.org/xml/ns/javaee" 
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+   xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+   metadata-complete="false"
+   version="3.1">
+    <display-name>OpenRefine</display-name>
+    <description>OpenRefine Webapp</description>
+
+    <!--+
+        | This forces all the session cookies to default to the root path.
+        | to allow sessions to work even when butterfly is handling
+        | multiple zones.
+        | NOTE: this is jetty-specific, so other web-app servers
+        | might require different parameters.
+        +-->
+    <context-param>
+        <param-name>org.eclipse.jetty.servlet.SessionPath</param-name>
+        <param-value>/</param-value>
+    </context-param>
+    <servlet>
+        <servlet-name>refine</servlet-name>
+        <servlet-class>com.google.refine.RefineServlet</servlet-class>
+        <init-param>
+            <param-name>refine.version</param-name>
+            <param-value>$VERSION</param-value>
+        </init-param>
+        <init-param>
+            <param-name>refine.revision</param-name>
+            <param-value>$REVISION</param-value>
+        </init-param>
+        <init-param>
+            <param-name>gzip</param-name>
+            <param-value>true</param-value>
+        </init-param>
+        <!-- added by Wikier, unused by us
+        <init-param>
+            <param-name>refine.data</param-name>
+            <param-value>/tmp/refine</param-value>
+        </init-param>  
+        -->
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>refine</servlet-name>
+        <url-pattern>/*</url-pattern>
+    </servlet-mapping>
+
+</web-app>

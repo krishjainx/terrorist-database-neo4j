@@ -1,0 +1,70 @@
+<div id="cluster-and-edit-dialog" class="dialog-frame" style="width: 1000px;">
+    <div class="dialog-header" bind="dialogHeader"></div>
+    <div class="dialog-body clustering-dialog-body" bind="dialogBody">
+        <div>
+            <span bind="or_dialog_descr"></span>
+            <a href="https://openrefine.org/docs/manual/cellediting#cluster-and-edit" target="_blank"
+               bind="or_dialog_findMore"></a>
+        </div>
+        <div class="clustering-dialog-control-row">
+            <div  class="clustering-dialog-control-group">
+                <label for="methodSelectorId" bind="or_dialog_method"></label>
+                <select bind="methodSelector" id="methodSelectorId">
+                <option selected="true" bind="or_dialog_keyCollision"></option>
+                <option bind="or_dialog_neighbor"></option>
+            </select>
+            </div>
+            <div  class="clustering-dialog-control-group">
+                <div class="binning-controls"><label for="keyingFunctionSelectorId" bind="or_dialog_keying"></label>
+                    <select bind="keyingFunctionSelector" id="keyingFunctionSelectorId"></select>
+                </div>
+                <div class="knn-controls hidden"><label for="distanceFunctionSelectorId" bind="or_dialog_distance"></label>
+                    <select bind="distanceFunctionSelector" id="distanceFunctionSelectorId"></select>
+                </div>
+            </div>
+            <div class="clustering-dialog-control-group">
+                <button type="button" bind="manageFunctionsBtn" id="manageFunctionsBtnId"></button>
+            </div>
+            <div  class="clustering-dialog-control-group">
+                <div id="ngram-fingerprint-params" class="function-params hidden">
+                    <label for="ngramSizeId" bind="or_dialog_ngramSize"></label>
+                    <input spellcheck="false" type="text" value="2" bind="ngramSize" id="ngramSizeId" name="ngram-size" size="2"
+                           class="param" datatype="int">
+                </div>
+                <div class="knn-controls hidden">
+                    <span style="margin-right: 1em">
+                        <label for="radiusId" bind="or_dialog_radius"></label>
+                        <input spellcheck="false" type="text" value="1.0" bind="radius" id="radiusId" name="radius" size="2"
+                               class="param" datatype="float">
+                    </span>
+                    <span>
+                        <label for="ngramBlockId" bind="or_dialog_blockChars"></label>
+                        <input spellcheck="false" type="text" value="6" bind="ngramBlock" id="ngramBlockId" name="blocking-ngram-size"
+                               size="2" class="param" datatype="int">
+                    </span>
+                </div>
+            </div>
+            <div class="clustering-dialog-control-group">
+                <input type="checkbox" bind="autoCheckbox" id="autoId"/><label for="autoId" bind="or_auto_update"></label>
+            </div>
+            <div class="control-group" bind="resultSummary" id="resultSummaryId" style="text-align:right;">
+            </div>
+        </div>
+        <div class="clustering-dialog-facet-row">
+            <div bind="tableContainer" id="tableContainerId" class="clustering-dialog-table-container"></div>
+            <div bind="facetContainer"></div>
+        </div>
+    </div>
+    <div class="dialog-footer" bind="dialogFooter" style="justify-content: space-between">
+        <div class="dialog-footer-bg">
+            <button class="button" bind="selectAllButton"></button>
+            <button class="button" bind="deselectAllButton"></button>
+        </div>
+        <div class="dialog-footer-bg">
+            <button class="button" bind="exportClusterButton"></button>
+            <button class="button button-primary" bind="applyReClusterButton"></button>
+            <button class="button" bind="applyCloseButton"></button>
+            <button class="button" bind="closeButton"></button>
+        </div>
+    </div>
+</div>

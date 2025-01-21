@@ -1,0 +1,135 @@
+<div  bind="databasePanel" class="database-container">
+    
+         <div id = "databaseLayoutDiv" class="grid-layout layout-div">
+                <div><button type="button" class="button" id="newConnectionButtonDiv" bind="newConnectionButton">New connection</button></div>
+                <div style="margin-top:1px; padding-right:1px;"></div>
+                <div class="sidebarDiv" bind="sidebarDiv">
+                 
+              <div class="custom-restricted database-border">	
+                <span id="savedConnectionSpan">Saved connections</span>
+                <ul bind="menuListUl" id="menuListUl"></ul>
+            </div>
+               
+               <div class="connection-div-layout">
+               
+                     <div id = "newConnectionDiv" class="new-connection-div " bind="newConnectionDiv">
+                           
+                           <!-- <div class="panel panel-info"> -->
+                             <form>
+                             	  <fieldset class="new-connection-fieldset database-border">
+                                      <legend class="new-connection-legend" id="new-connection-legend"></legend>
+                                  
+                                      <div>
+                                           <label id="connectionNameLabel" for="connectionName"></label>
+                                           <input spellcheck="false" bind="connectionNameInput" id="connectionName" type="text" placeholder="" value="" required>
+                                       </div>
+                               
+                                       <div>
+                                           <label id="databaseTypeLabel" for="databaseTypeSelect"></label>
+                                            <select name="selection" id="databaseTypeSelect" bind="databaseTypeSelect" required>
+                                            	  <option value="postgresql">PostgreSQL</option>  
+                                               <option value="mysql" selected="selected">MySQL</option>
+                                               <option value="mariadb">MariaDB</option>
+                                                <option value="sqlite">SQLite</option>
+                                            </select>
+                                       </div>
+
+                                        <div class="dbtype-options dbt-postgresql dbt-mysql dbt-mariadb">
+                                          <label id="databaseHostLabel" for="databaseHost"></label> 
+                                          <input spellcheck="false"  bind="databaseHostInput" id="databaseHost" type="text" placeholder="" value="localhost" required>
+                                        </div>
+                                        <div class="dbtype-options dbt-postgresql dbt-mysql dbt-mariadb">
+                                          <label id="databasePortLabel" for="databasePort"></label> 
+                                          <input spellcheck="false" bind="databasePortInput" id="databasePort" type="text" placeholder="" value="5432" required>
+                                        </div>
+                                        <div class="dbtype-options dbt-postgresql dbt-mysql dbt-mariadb">
+                                          <label id="databaseUserLabel" for="databaseUser"></label> 
+                                          <input spellcheck="false" bind="databaseUserInput" id="databaseUser" type="text" placeholder="" value="postgres" required>
+                                        </div>
+                                        <div class="dbtype-options dbt-postgresql dbt-mysql dbt-mariadb">
+                                          <label id="databasePasswordLabel" for="databasePassword"></label> 
+                                          <input bind="databasePasswordInput" id="databasePassword" type="password" placeholder="" required>
+                                        </div>
+                                        <div class=" dbtype-options dbt-postgresql dbt-mysql dbt-mariadb dbt-sqlite">
+                                          <label id="databaseNameLabel" for="initialDatabase"></label> 
+                                          <input spellcheck="false" bind="initialDatabaseInput" id="initialDatabase" type="text" placeholder="" required>
+                                        </div>
+                                        <div class="dbtype-options">
+                                          <label id="databaseSchemaLabel" for="initialSchema"></label> 
+                                          <input spellcheck="false" bind="initialSchemaInput" id="initialSchema" type="text" placeholder="" required>
+                                        </div>
+                                       
+                                        <div id="newConnectionControlDiv">
+                                           <button type="button" class="button" id="databaseTestButton" bind="testDatabaseButton"><span>Test</span></button>
+                                           <button type="button" class="button" id="databaseSaveButton" bind="saveConnectionButton">Save</button>
+                                           <button type="button" class="button" id="databaseConnectButton" bind="databaseConnectButton">Connect</button>
+                                       </div>
+                                       
+                                       <div id="editConnectionControlDiv" style="display: none;">
+                                           <button type="button" class="button" id="connectionEditButton" bind="editConnectionButton"><span>Edit</span></button>
+                                           <button type="button" class="button" id="connectionEditCancelButton" bind="cancelEditConnectionButton">Cancel</button>
+                                         
+                                       </div>
+                               			
+                                   </fieldset>
+                                </form>
+                            
+                           	 
+                           <!-- </div> --> <!--End Panel Div -->
+                         
+                         
+                      </div><!--End NewConnectionDiv -->
+                             
+                      <div class="sql-editor-div  grid-layout" bind="sqlEditorDiv" id="sqlEditorDiv" style="display: none;" >
+                                   
+                                <form>
+                                		<input type="hidden" id="currentConnectionNameInput" name="currentConnectionName">
+                                		<input type="hidden" id="currentDatabaseTypeInput" name="currentDatabaseType">
+                                		<input type="hidden" id="currentDatabaseUserInput" name="currentDatabaseUser">
+                                		<input type="hidden" id="currentDatabasePasswordInput" name="currentDatabasePassword">
+                                		<input type="hidden" id="currentDatabaseHostInput" name="currentDatabaseHost">
+                                		<input type="hidden" id="currentDatabasePortInput" name="currentDatabasePort">
+                                		<input type="hidden" id="currentInitialDatabaseInput" name="currentInitialDatabase">
+                                		
+									<div class="database-border">
+										<div class="panel-heading"><label for="queryTextArea">Query Editor</label></div>
+										<div>
+											<fieldset style="margin-top:5px;">
+											    <textarea id="queryTextArea" bind="queryTextArea" class="no-resize" placeholder="Enter your query" rows="10" >SELECT * FROM</textarea>
+											</fieldset>	
+										    <div id="connectionParameterSpan"></div>
+											<!-- <select name="querySelect" id="queryHistorySelect" bind="queryHistorySelect" class="pure-input-1" style="padding-bottom:2px;">
+													<option value="1">Query History</option>  
+											</select> -->
+										</div>
+										
+									<div>
+										<div>
+									       <button type="button" id="executeQueryBtn" bind="executeQueryButton">Preview Query Result</button>
+									    <!--    <button type="button" bind="saveQueryButton" class="button-success pure-button">Save Query</button> -->
+									    		
+									    </div>
+									</div>
+									</div>
+                                    
+                                    <!--
+									<div class="panel panel-info pure-input-1-2">
+										<div class="panel-heading">Saved Queries</div>
+										<div class="panel-body">
+											<div class="queryResultDiv pure-input-1 scrollable" bind="queryResultDiv" id="queryResultDiv" style="<!padding:2px; margin-top:5px;"> </div>
+										</div>
+										
+									</div>
+                                    -->
+                             </form>	
+                        
+                     </div><!-- End Sql Editor Div-->
+                   
+               </div>
+           
+           </div> <!-- End pure-g -->
+         
+       </div> <!-- End databaseLayoutDiv -->
+    
+    
+</div><!-- End databaseContainer -->

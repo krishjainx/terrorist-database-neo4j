@@ -1,0 +1,23 @@
+<div class="dialog-frame" style="width: 600px;">
+  <div class="dialog-border">
+    <div class="dialog-header" bind="dialogHeader"></div>
+    <div class="dialog-body" bind="dialogBody">
+      <div class="grid-layout layout-normal layout-full grid-layout-for-ui"><table role="presentation" style="table-layout: fixed">
+        <tr>
+          <td><label for="keyColumnSelectId" bind="or_views_keyCol"></label></td>
+          <td><label for="valueColumnSelectId" bind="or_views_valCol"></label></td>
+          <td><label for="noteColumnSelectId" bind="or_views_noteCol"></label></td>
+        </tr>
+        <tr>
+          <td><select bind="keyColumnSelect" id="keyColumnSelectId" size="15" style="width: 100%; overflow: auto;"></select></td>
+          <td><select bind="valueColumnSelect" id="valueColumnSelectId" size="15" style="width: 100%; overflow: auto;"></select></td>
+          <td><select bind="noteColumnSelect" id="noteColumnSelectId" size="15" style="width: 100%; overflow: auto;"></select></td>
+        </tr>
+      </table></div>
+    </div>
+    <div class="dialog-footer" bind="dialogFooter">
+      <button class="button button-primary" bind="okButton"></button>
+      <button class="button" bind="cancelButton"></button>
+    </div>
+  </div>
+</div>

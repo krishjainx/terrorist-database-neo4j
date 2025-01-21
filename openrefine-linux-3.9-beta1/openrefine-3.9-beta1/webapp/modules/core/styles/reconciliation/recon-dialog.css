@@ -1,0 +1,130 @@
+/*
+
+Copyright 2010, Google Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+    * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,           
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY           
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*/
+
+.recon-dialog-service {
+  padding: 0 10px 10px;
+}
+
+.recon-dialog-service-list-container {
+  border: 1px solid #ccc;
+  max-height: 470px;
+  height: 470px !important;
+  z-index: 10;
+  overflow: auto;
+}
+
+.recon-dialog-service-list {
+padding:1px;
+padding-bottom:10px ;
+height: 10px ;
+max-height: 100px;
+display: block;
+
+}
+
+
+a.recon-dialog-service-list-container {
+  border: 1px solid #ccc;
+  padding: 10px;
+  max-height: 100px;
+  height: 100px !important;
+}
+
+a.recon-dialog-service-list-container {
+  background: #eee;
+}
+
+a.recon-dialog-service-list-container.selected {
+  background: #eee;
+  font-weight: bold;
+}
+
+.recon-dialog-service-panel-message {
+    text-align: left;
+    font-size: 100%;
+    padding: 10px 0;
+    color:black;
+}
+.recon-service-entry{
+  margin-left: 0.2em;
+  margin-right: 0.25em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 15ch;
+  display: inline-block;
+  vertical-align: middle 
+
+}
+
+.recon-dialog-url-element{
+  color:var(--light-grey);
+}
+a.recon-dialog-service-selector-remove {
+  float: right;
+  position: relative;
+  top: 5px;
+  left: 5px;
+  width: 12px;
+  height: 12px;
+  margin-right: 10px;
+  text-decoration: none;
+  background-image: url(../../images/close-map.png);
+  background-repeat: no-repeat;
+  background-position: 0px 0px;
+}
+
+.recon-service-entry{
+  display:inline-block;
+
+}
+.recon-dialog-service-list-element{
+  display:block;
+  margin-bottom: 0.5em ;
+  padding:5px 10px
+}
+.recon-dialog-service-list-element:hover{
+  background-color:var(--dialog-header);
+}
+
+.pop-up-message {
+  position: absolute;
+  background-color: white;
+  color: black;
+  padding: 5px;
+  display: none; 
+  top:570px;
+}
+
+.pop-up-message.show {
+  display: block; 
+}

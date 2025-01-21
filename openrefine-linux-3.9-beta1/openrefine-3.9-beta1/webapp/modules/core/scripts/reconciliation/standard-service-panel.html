@@ -1,0 +1,40 @@
+<div class="recon-dialog-service-panel recon-dialog-standard-service-panel">
+  <div class="grid-layout layout-normal layout-full grid-layout-for-ui"><table role="presentation">
+    <tr>
+      <td colspan="2" style="text-align: right;">
+        <a href="" target="_blank" bind="documentationLink"><span bind="or_proc_accessDocumentation"></span>
+          <span class="ui-icon ui-icon-link" style="display: inline-block"></span></a>
+      </td>
+      </tr>
+    <tr>
+      <td bind="or_proc_cellType"></td>
+      <td bind="or_proc_colDetail"></td>
+    </tr>
+    <tr>
+      <td><div class="type-container" bind="typeContainer"></div></td>
+      <td width="50%"><div class="detail-container" bind="detailContainer"></div></td>
+    </tr>
+    <tr>
+      <td colspan="2" style="display:flex;align-items:center;">
+        <input type="radio" name="type-choice" id="againstTypeId" bind="againstType" value="">
+        <label for="againstTypeId"><span bind="or_proc_againstType"></span></label>
+        <div class='against-type-control'>
+          <span class="mapped-value"><a></a><span class="type-id">()</span><a bind='editMappedType' class="edit-mapped-value">edit</a></span>
+          <input aria-label="" size="25" bind="typeInput" spellcheck="false"/>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2" style="display:flex;align-items:center;">
+        <input type="radio" name="type-choice" id="noTypeId" bind="noType" value="-">
+        <label for="noTypeId"><span bind="or_proc_noType"></span></label></td>
+    </tr>
+    <tr>
+      <td colspan="2"><input type="checkbox" checked bind="automatchCheck" id="automatchCheckId" /> <label for="automatchCheckId" bind="or_proc_autoMatch"></label></td>
+    </tr>
+    <tr>
+      <td colspan="2"><label for="maxCandidatesId" bind="or_proc_max_candidates"></label> <input type="number" bind="maxCandidates" id="maxCandidatesId" min=0 max=9 width=20/> </td>
+      <td></td>
+    </tr>
+  </table></div>
+</div>
