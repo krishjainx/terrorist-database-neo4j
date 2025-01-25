@@ -23,3 +23,7 @@ To setup the Neo4j container, run `setup_neo4j_container.sh`.
 
 To run the query, run `query.py`.
 
+# References:
+
+1. https://github.com/Anto188bas/TemporalMultiGraphMatch
+2. https://arxiv.org/pdf/2501.09736
