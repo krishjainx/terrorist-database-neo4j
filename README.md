@@ -27,3 +27,12 @@ To run the query, run `query.py`.
 
 1. https://github.com/Anto188bas/TemporalMultiGraphMatch
 2. https://arxiv.org/pdf/2501.09736
+
+
+# **Action Items**
+
+- the code can identify geographical overlaps through find_transitive_connections(), but that's about it. I'll be writing more queries for both temporal and not.
+- The code I pushed provides two main ways to analyze regional patterns:  
+    1. find_transitive_connections() - This identifies groups operating in the same regions as a target group, returning potential collaborations
+    2. find_cross_region_groups() - This detects groups carrying out attacks across multiple regions within a set timeframe, showing operational shifts, and expansion.
+- With Panama the team had some queries that were path queries but in a limited time (e.g. did this agent communicate perhaps through intermediaries with this other agent but in a limited time frame). Such data may not be directly available to us but maybe I can infer communication through similar modus operandi?
