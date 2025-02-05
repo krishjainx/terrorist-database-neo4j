@@ -90,17 +90,22 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i1:Incident)
         WHERE i1.region_txt = $region1 AND i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
-        WITH i1, i1.gname AS group_name
+        WITH i1, date({year: i1.iyear, month: coalesce(i1.imonth, 1), day: coalesce(i1.iday, 1)}) AS date1
         MATCH (i2:Incident)
-        WHERE i2.gname = group_name 
+        WHERE i2.gname = i1.gname 
         AND i2.region_txt = $region2
-        RETURN DISTINCT group_name AS GroupName,
+        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) 
+            >= date1
+        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) 
+            <= date1 + duration({months: $months})
+        RETURN DISTINCT i1.gname AS GroupName,
                count(i1) + count(i2) AS TotalAttacks
         ORDER BY TotalAttacks DESC
         """
         return self.run_query(query, {
             "region1": region1,
-            "region2": region2
+            "region2": region2,
+            "months": months
         })
 
     def find_cities_multiple_attacks(self, hours=48):
@@ -173,10 +178,18 @@ class Neo4jTerrorismDB:
         MATCH (i:Incident)
         WHERE i.gname = $group_name
         WITH date({year: i.iyear, month: coalesce(i.imonth, 1), day: coalesce(i.iday, 1)}) AS attack_date,
-             i.city AS location
-        WITH attack_date, collect(location) AS locations, count(*) AS AttackCount
-        WHERE AttackCount >= $min_attacks
-        RETURN attack_date AS Date, AttackCount, locations AS Locations
+             i.city AS location,
+             i.eventid as event_id
+        WITH attack_date, 
+             collect({loc: location, id: event_id}) as attacks
+        WITH attack_date,
+             [x IN attacks WHERE duration.between(attack_date, 
+                 attack_date + duration({hours: $hours})).hours <= $hours] as window_attacks,
+             attacks[0].loc as location
+        WHERE size(window_attacks) >= $min_attacks
+        RETURN attack_date AS Date, 
+               size(window_attacks) AS AttackCount,
+               [x IN window_attacks | x.loc] AS Locations
         ORDER BY attack_date
         """
         return self.run_query(query, {
@@ -187,28 +200,27 @@ class Neo4jTerrorismDB:
 
     def find_attack_chain(self, start_group, end_group, max_length=None):
         """Find attack chains linking two groups through shared locations or tactics."""
-        query = """
-        MATCH (start:Incident)
+        max_length = 5 if max_length is None else max_length
+        query = f"""
+        MATCH path = (start:Incident)-[:SIMILAR_ATTACK*1..{max_length}]->(end:Incident)
         WHERE start.gname = $start_group
-        WITH start
-        MATCH (end:Incident)
-        WHERE end.gname = $end_group
+        AND end.gname = $end_group
         AND start.iyear <= end.iyear
-        RETURN DISTINCT {
-            start_attack: {
-                group: start.gname,
-                date: date({year: start.iyear, month: coalesce(start.imonth, 1), day: coalesce(start.iday, 1)}),
-                location: start.city,
-                attack_type: start.attacktype1_txt
-            },
-            end_attack: {
-                group: end.gname,
-                date: date({year: end.iyear, month: coalesce(end.imonth, 1), day: coalesce(end.iday, 1)}),
-                location: end.city,
-                attack_type: end.attacktype1_txt
-            }
-        } AS chain
-        ORDER BY chain.start_attack.date
+        AND length(path) <= {max_length}
+        RETURN DISTINCT {{
+            path_length: length(path),
+            attacks: [x IN nodes(path) | {{
+                group: x.gname,
+                date: date({{
+                    year: x.iyear, 
+                    month: coalesce(x.imonth, 1), 
+                    day: coalesce(x.iday, 1)
+                }}),
+                location: x.city,
+                attack_type: x.attacktype1_txt
+            }}]
+        }} AS chain
+        ORDER BY chain.path_length
         LIMIT 5
         """
         return self.run_query(query, {
@@ -395,6 +407,243 @@ class Neo4jTerrorismDB:
         """
         return self.run_query(query)
 
+    def find_potential_coordination(self, days_window=30, similarity_threshold=0.5):
+        """Find groups that may be coordinating based on similar attack patterns within a time window."""
+        query = """
+        MATCH (i1:Incident)
+        WHERE i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
+        WITH i1, date({
+            year: i1.iyear,
+            month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
+            day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+        }) AS date1
+        
+        MATCH (i2:Incident)
+        WHERE i2.gname <> i1.gname 
+        AND i2.gname IS NOT NULL 
+        AND i2.gname <> 'Unknown'
+        AND date({
+            year: i2.iyear,
+            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+        }) >= date1
+        AND date({
+            year: i2.iyear,
+            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+        }) <= date1 + duration({days: $days})
+        
+        WITH i1, i2,
+            // Calculate weighted similarity components
+            (CASE 
+                WHEN i1.weaptype1_txt = i2.weaptype1_txt 
+                AND i1.weaptype1_txt IS NOT NULL THEN 0.35
+                ELSE 0 
+            END +
+            CASE 
+                WHEN i1.targtype1_txt = i2.targtype1_txt 
+                AND i1.targtype1_txt IS NOT NULL THEN 0.35
+                ELSE 0 
+            END +
+            CASE 
+                WHEN i1.region_txt = i2.region_txt 
+                AND i1.region_txt IS NOT NULL THEN 0.15
+                ELSE 0 
+            END +
+            CASE 
+                WHEN i1.country_txt = i2.country_txt 
+                AND i1.country_txt IS NOT NULL THEN 0.15
+                ELSE 0 
+            END) AS similarity_score,
+            
+            i1.weaptype1_txt = i2.weaptype1_txt AS weapon_match,
+            i1.targtype1_txt = i2.targtype1_txt AS target_match,
+            i1.region_txt = i2.region_txt AS region_match,
+            i1.country_txt = i2.country_txt AS country_match,
+            
+            duration.between(
+                date({
+                    year: i1.iyear,
+                    month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
+                    day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+                }),
+                date({
+                    year: i2.iyear,
+                    month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+                    day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+                })
+            ).days AS days_between
+        
+        WHERE similarity_score >= $threshold
+        
+        WITH i1.gname AS group1, 
+             i2.gname AS group2,
+             collect({
+                 similarity_score: similarity_score,
+                 days_between: days_between,
+                 weapon_match: weapon_match,
+                 target_match: target_match,
+                 region_match: region_match,
+                 country_match: country_match,
+                 attack1: {
+                     date: date({
+                         year: i1.iyear,
+                         month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
+                         day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+                     }),
+                     location: i1.city + ', ' + i1.country_txt,
+                     weapon: i1.weaptype1_txt,
+                     target: i1.targtype1_txt
+                 },
+                 attack2: {
+                     date: date({
+                         year: i2.iyear,
+                         month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+                         day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+                     }),
+                     location: i2.city + ', ' + i2.country_txt,
+                     weapon: i2.weaptype1_txt,
+                     target: i2.targtype1_txt
+                 }
+             }) AS incident_pairs
+
+        // Unwind the pairs to calculate true average
+        UNWIND incident_pairs AS pair
+        WITH group1, group2, incident_pairs,
+             avg(pair.similarity_score) AS avg_similarity,
+             avg(pair.days_between) AS avg_days_between,
+             collect(DISTINCT CASE WHEN pair.weapon_match THEN 'weapon' END) AS weapon_matches,
+             collect(DISTINCT CASE WHEN pair.target_match THEN 'target' END) AS target_matches,
+             collect(DISTINCT CASE WHEN pair.region_match THEN 'region' END) AS region_matches,
+             collect(DISTINCT CASE WHEN pair.country_match THEN 'country' END) AS country_matches
+        
+        WITH group1, group2, incident_pairs,
+             round(10 * avg_similarity) / 10.0 AS similarity_score,
+             avg_days_between,
+             [x IN weapon_matches WHERE x IS NOT NULL] + 
+             [x IN target_matches WHERE x IS NOT NULL] +
+             [x IN region_matches WHERE x IS NOT NULL] +
+             [x IN country_matches WHERE x IS NOT NULL] AS matches
+        
+        RETURN 
+            group1,
+            group2,
+            similarity_score,
+            avg_days_between,
+            reduce(s = '', m IN matches | s + (CASE WHEN s = '' THEN '' ELSE ' ' END) + m) AS matching_criteria,
+            incident_pairs AS similar_attacks
+        
+        ORDER BY similarity_score DESC, avg_days_between
+        LIMIT 100
+        """
+        return self.run_query(query, {
+            "days": days_window,
+            "threshold": similarity_threshold
+        })
+
+    def create_similarity_relationships(self, similarity_threshold=0.7, days_window=30):
+        """Create SIMILAR_ATTACK relationships between incidents that have similar characteristics."""
+        # First create an index on incident IDs if it doesn't exist
+        setup_query = """
+        CREATE INDEX incident_id IF NOT EXISTS FOR (i:Incident) ON (i.eventid)
+        """
+        self.run_query(setup_query)
+        
+        query = """
+        MATCH (i1:Incident)
+        WHERE i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
+        WITH i1, date({
+            year: i1.iyear,
+            month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
+            day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+        }) AS date1
+        
+        MATCH (i2:Incident)
+        WHERE i2.gname <> i1.gname 
+        AND i2.gname IS NOT NULL 
+        AND i2.gname <> 'Unknown'
+        AND i1.eventid < i2.eventid
+        AND date({
+            year: i2.iyear,
+            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+        }) >= date1
+        AND date({
+            year: i2.iyear,
+            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
+            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+        }) <= date1 + duration({days: $days})
+        
+        WITH i1, i2,
+             // Calculate normalized similarity score (0-1 scale)
+             toFloat(CASE WHEN i1.weaptype1_txt = i2.weaptype1_txt THEN 30 ELSE 0 END +
+                    CASE WHEN i1.targtype1_txt = i2.targtype1_txt THEN 30 ELSE 0 END +
+                    CASE WHEN i1.region_txt = i2.region_txt THEN 20 ELSE 0 END +
+                    CASE WHEN i1.country_txt = i2.country_txt THEN 20 ELSE 0 END) / 100.0
+             AS similarity_score
+        
+        WHERE similarity_score >= $threshold
+        
+        // Create relationship with similarity score
+        MERGE (i1)-[r:SIMILAR_ATTACK]->(i2)
+        SET r.similarity_score = similarity_score
+        """
+        return self.run_query(query, {
+            "days": days_window,
+            "threshold": similarity_threshold
+        })
+
+    def find_indirect_connections(self, group1, group2, max_intermediaries=2, days_window=60):
+        """Find potential indirect connections between two groups through intermediaries.
+        
+        First ensures similarity relationships exist, then finds paths through them.
+        """
+        # First create/update similarity relationships
+        self.create_similarity_relationships()
+        
+        query = """
+        MATCH path = (i1:Incident)-[:SIMILAR_ATTACK*1..10]->(i2:Incident)
+        WHERE i1.gname = $group1 
+        AND i2.gname = $group2
+        AND length(path) <= $max_intermediaries
+        AND all(r IN relationships(path) WHERE r.similarity_score >= 0.7)
+        AND all(x IN nodes(path) WHERE 
+            duration.between(
+                date({
+                    year: i1.iyear,
+                    month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+                    day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
+                }),
+                date({
+                    year: x.iyear,
+                    month: CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END,
+                    day: CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END
+                })
+            ).days <= $days
+        )
+        RETURN path,
+               [x IN nodes(path) | x.gname] as groups,
+               [x IN nodes(path) | {
+                   date: date({
+                       year: x.iyear,
+                       month: coalesce(CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END, 1),
+                       day: coalesce(CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END, 1)
+                   }),
+                   location: x.city + ', ' + x.country_txt,
+                   weapon: x.weaptype1_txt,
+                   target: x.targtype1_txt
+               }] as attacks,
+               length(path) as path_length
+        ORDER BY length(path)
+        LIMIT 10
+        """
+        return self.run_query(query, {
+            "group1": group1,
+            "group2": group2,
+            "max_intermediaries": max_intermediaries,
+            "days": days_window
+        })
+
 if __name__ == "__main__":
     db = Neo4jTerrorismDB("bolt://localhost:7687", "neo4j", "password")
 
@@ -466,6 +715,26 @@ if __name__ == "__main__":
         results = db.find_regional_attack_clusters()
         for r in results:
             print(r)
+
+        # Find potential direct coordination
+        print("\n13. Groups with similar attack patterns within 30 days:")
+        results = db.find_potential_coordination(days_window=30)
+        for r in results:
+            print(f"Groups {r['group1']} and {r['group2']} - Similarity: {r['similarity_score']} (Matched:{r['matching_criteria']})")
+            for attack_pair in r['similar_attacks']:
+                print(f"  {attack_pair['attack1']['date']} -> {attack_pair['attack2']['date']}")
+
+        # Find indirect connections
+        print("\n14. Indirect connections between Taliban and ISIS:")
+        results = db.find_indirect_connections(
+            "Taliban", 
+            "Islamic State of Iraq and the Levant (ISIL)", 
+            max_intermediaries=2
+        )
+        for r in results:
+            print(f"Connection path: {' -> '.join(r['groups'])}")
+            for attack in r['attacks']:
+                print(f"  {attack['date']}: {attack['location']}")
 
     finally:
         db.close()
