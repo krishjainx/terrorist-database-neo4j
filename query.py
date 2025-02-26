@@ -123,15 +123,25 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i1:Incident)
         WHERE i1.city IS NOT NULL
-        WITH i1
+        AND i1.iyear IS NOT NULL AND i1.imonth IS NOT NULL AND i1.iday IS NOT NULL
+        WITH i1, datetime({
+            year: i1.iyear,
+            month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
+        }) AS dt1
         MATCH (i2:Incident)
-        WHERE i1.city = i2.city 
-        AND i1.gname <> i2.gname
-        AND i1.iyear = i2.iyear
-        AND i1.imonth = i2.imonth
-        AND abs(i1.iday - i2.iday) * 24 <= $hours
+        WHERE i2.city = i1.city 
+        AND i1 <> i2  // Prevent self-matches
+        AND i2.gname <> i1.gname
+        AND i2.iyear IS NOT NULL AND i2.imonth IS NOT NULL AND i2.iday IS NOT NULL
+        WITH i1, dt1, i2, datetime({
+            year: i2.iyear,
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) AS dt2
+        WHERE duration.between(dt1, dt2).hours <= $hours
         RETURN i1.city AS City,
-               collect(DISTINCT i1.gname) + collect(DISTINCT i2.gname) AS Groups,
+               apoc.coll.toSet(collect(DISTINCT i1.gname) + collect(DISTINCT i2.gname)) AS Groups,
                i1.country_txt AS Country,
                count(DISTINCT i2) AS AttackCount
         ORDER BY AttackCount DESC
@@ -151,17 +161,13 @@ class Neo4jTerrorismDB:
         MATCH (i3:Incident)
         WHERE i3.gname <> $group1 
         AND i3.gname <> $group2
-        AND i3.attacktype1 IN g1_tactics
-        AND i3.attacktype1 IN g2_tactics
+        AND ANY(tactic IN [i3.attacktype1] WHERE tactic IN g1_tactics AND tactic IN g2_tactics)
         RETURN DISTINCT i3.gname AS GroupName,
                collect(DISTINCT i3.attacktype1_txt) AS SharedTactics,
                count(DISTINCT i3) AS AttackCount
         ORDER BY AttackCount DESC
         """
-        return self.run_query(query, {
-            "group1": group1,
-            "group2": group2
-        })
+        return self.run_query(query, {"group1": group1, "group2": group2})
 
     def get_group_activities_in_timerange(self, group_name, start_date, end_date):
         """Get activities by a group in a specific date range."""
@@ -607,7 +613,6 @@ class Neo4jTerrorismDB:
 
     def create_similarity_relationships(self, similarity_threshold=0.7, days_window=30):
         """Create SIMILAR_ATTACK relationships between incidents that have similar characteristics."""
-        # First create an index on incident IDs if it doesn't exist
         setup_query = """
         CREATE INDEX incident_id IF NOT EXISTS FOR (i:Incident) ON (i.eventid)
         """
@@ -616,86 +621,79 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i1:Incident)
         WHERE i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
-        WITH i1, date({
+        AND i1.iyear IS NOT NULL AND i1.imonth IS NOT NULL AND i1.iday IS NOT NULL
+        WITH i1, datetime({
             year: i1.iyear,
-            month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
-            day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
-        }) AS date1
+            month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
+        }) AS dt1
         
         MATCH (i2:Incident)
         WHERE i2.gname <> i1.gname 
         AND i2.gname IS NOT NULL 
         AND i2.gname <> 'Unknown'
-        AND i1.eventid < i2.eventid
-        AND date({
+        AND i1.eventid < i2.eventid  // Prevent duplicate relationships
+        AND i2.iyear IS NOT NULL AND i2.imonth IS NOT NULL AND i2.iday IS NOT NULL
+        WITH i1, dt1, i2, datetime({
             year: i2.iyear,
-            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
-        }) >= date1
-        AND date({
-            year: i2.iyear,
-            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
-        }) <= date1 + duration({days: $days})
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) AS dt2
         
         WITH i1, i2,
-             // Calculate normalized similarity score (0-1 scale)
-             toFloat(CASE WHEN i1.weaptype1_txt = i2.weaptype1_txt THEN 30 ELSE 0 END +
-                    CASE WHEN i1.targtype1_txt = i2.targtype1_txt THEN 30 ELSE 0 END +
-                    CASE WHEN i1.region_txt = i2.region_txt THEN 20 ELSE 0 END +
-                    CASE WHEN i1.country_txt = i2.country_txt THEN 20 ELSE 0 END) / 100.0
-             AS similarity_score
-        
+             toFloat(
+                 CASE WHEN i1.weaptype1_txt = i2.weaptype1_txt THEN 30 ELSE 0 END +
+                 CASE WHEN i1.targtype1_txt = i2.targtype1_txt THEN 30 ELSE 0 END +
+                 CASE WHEN i1.region_txt = i2.region_txt THEN 20 ELSE 0 END +
+                 CASE WHEN i1.country_txt = i2.country_txt THEN 20 ELSE 0 END
+             ) / 100.0 AS similarity_score
+             
         WHERE similarity_score >= $threshold
+        AND duration.between(dt1, dt2).days <= $days
         
-        // Create relationship with similarity score
         MERGE (i1)-[r:SIMILAR_ATTACK]->(i2)
         SET r.similarity_score = similarity_score
         """
-        return self.run_query(query, {
-            "days": days_window,
-            "threshold": similarity_threshold
-        })
+        return self.run_query(query, {"days": days_window, "threshold": similarity_threshold})
 
     def find_indirect_connections(self, group1, group2, max_intermediaries=2, days_window=60):
         """Find potential indirect connections between two groups through intermediaries."""
-        # First create/update similarity relationships
         self.create_similarity_relationships()
         
         query = """
         MATCH path = (i1:Incident)-[:SIMILAR_ATTACK*1..10]->(i2:Incident)
         WHERE i1.gname = $group1 
         AND i2.gname = $group2
-        AND length(path) <= $max_intermediaries
+        AND length(path) - 1 <= $max_intermediaries  // Correct path length calculation
         AND all(r IN relationships(path) WHERE r.similarity_score >= 0.7)
         AND all(x IN nodes(path) WHERE 
             duration.between(
-                date({
+                datetime({
                     year: i1.iyear,
-                    month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
-                    day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
+                    month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+                    day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
                 }),
-                date({
+                datetime({
                     year: x.iyear,
-                    month: CASE WHEN x.imonth IS NULL OR x.imonth <= 0 THEN 1 ELSE x.imonth END,
-                    day: CASE WHEN x.iday IS NULL OR x.iday <= 0 THEN 1 ELSE x.iday END
+                    month: CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END,
+                    day: CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END
                 })
             ).days <= $days
         )
         RETURN path,
                [x IN nodes(path) | x.gname] as groups,
                [x IN nodes(path) | {
-                   date: date({
+                   date: datetime({
                        year: x.iyear,
-                       month: CASE WHEN x.imonth IS NULL OR x.imonth <= 0 THEN 1 ELSE x.imonth END,
-                       day: CASE WHEN x.iday IS NULL OR x.iday <= 0 THEN 1 ELSE x.iday END
+                       month: CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END,
+                       day: CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END
                    }),
                    location: x.city + ', ' + x.country_txt,
                    weapon: x.weaptype1_txt,
                    target: x.targtype1_txt
                }] as attacks,
                length(path) as path_length
-        ORDER BY length(path)
+        ORDER BY path_length
         LIMIT 10
         """
         return self.run_query(query, {
