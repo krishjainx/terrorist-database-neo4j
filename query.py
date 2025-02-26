@@ -90,14 +90,24 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i1:Incident)
         WHERE i1.region_txt = $region1 AND i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
-        WITH i1, date({year: i1.iyear, month: coalesce(i1.imonth, 1), day: coalesce(i1.iday, 1)}) AS date1
+        WITH i1, date({
+            year: i1.iyear, 
+            month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 
+            day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
+        }) AS date1
         MATCH (i2:Incident)
         WHERE i2.gname = i1.gname 
         AND i2.region_txt = $region2
-        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) 
-            >= date1
-        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) 
-            <= date1 + duration({months: $months})
+        AND date({
+            year: i2.iyear, 
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) >= date1
+        AND date({
+            year: i2.iyear, 
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) <= date1 + duration({months: $months})
         RETURN DISTINCT i1.gname AS GroupName,
                count(i1) + count(i2) AS TotalAttacks
         ORDER BY TotalAttacks DESC
@@ -158,10 +168,22 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i:Incident)
         WHERE i.gname = $group_name
-        AND date({year: i.iyear, month: coalesce(i.imonth, 1), day: coalesce(i.iday, 1)}) >= date($start_date)
-        AND date({year: i.iyear, month: coalesce(i.imonth, 1), day: coalesce(i.iday, 1)}) <= date($end_date)
+        AND date({
+            year: i.iyear, 
+            month: CASE WHEN i.imonth IS NULL OR i.imonth <= 0 THEN 1 ELSE i.imonth END, 
+            day: CASE WHEN i.iday IS NULL OR i.iday <= 0 THEN 1 ELSE i.iday END
+        }) >= date($start_date)
+        AND date({
+            year: i.iyear, 
+            month: CASE WHEN i.imonth IS NULL OR i.imonth <= 0 THEN 1 ELSE i.imonth END, 
+            day: CASE WHEN i.iday IS NULL OR i.iday <= 0 THEN 1 ELSE i.iday END
+        }) <= date($end_date)
         RETURN i.eventid AS EventID, i.city AS City,
-               date({year: i.iyear, month: coalesce(i.imonth, 1), day: coalesce(i.iday, 1)}) AS Date,
+               date({
+                   year: i.iyear, 
+                   month: CASE WHEN i.imonth IS NULL OR i.imonth <= 0 THEN 1 ELSE i.imonth END, 
+                   day: CASE WHEN i.iday IS NULL OR i.iday <= 0 THEN 1 ELSE i.iday END
+               }) AS Date,
                i.attacktype1_txt AS AttackType, i.target1 AS Target, i.nkill AS Casualties,
                i.nwound AS Wounded, i.country_txt AS Country
         ORDER BY Date
@@ -177,7 +199,11 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i:Incident)
         WHERE i.gname = $group_name
-        WITH date({year: i.iyear, month: coalesce(i.imonth, 1), day: coalesce(i.iday, 1)}) AS attack_date,
+        WITH date({
+            year: i.iyear, 
+            month: CASE WHEN i.imonth IS NULL OR i.imonth <= 0 THEN 1 ELSE i.imonth END, 
+            day: CASE WHEN i.iday IS NULL OR i.iday <= 0 THEN 1 ELSE i.iday END
+        }) AS attack_date,
              i.city AS location,
              i.eventid as event_id
         WITH attack_date, 
@@ -213,8 +239,8 @@ class Neo4jTerrorismDB:
                 group: x.gname,
                 date: date({{
                     year: x.iyear, 
-                    month: coalesce(x.imonth, 1), 
-                    day: coalesce(x.iday, 1)
+                    month: CASE WHEN x.imonth IS NULL OR x.imonth <= 0 THEN 1 ELSE x.imonth END, 
+                    day: CASE WHEN x.iday IS NULL OR x.iday <= 0 THEN 1 ELSE x.iday END
                 }}),
                 location: x.city,
                 attack_type: x.attacktype1_txt
@@ -256,14 +282,26 @@ class Neo4jTerrorismDB:
         query = """
         MATCH (i1:Incident)
         WHERE i1.region_txt = $region1
-        WITH i1, date({year: i1.iyear, month: coalesce(i1.imonth, 1), day: coalesce(i1.iday, 1)}) AS date1
+        WITH i1, date({
+            year: i1.iyear, 
+            month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 
+            day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
+        }) AS date1
         MATCH (i2:Incident)
         WHERE i2.region_txt = $region2 
         AND i2.gname = i1.gname
         AND i2.gname IS NOT NULL 
         AND i2.gname <> 'Unknown'
-        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) >= date1
-        AND date({year: i2.iyear, month: coalesce(i2.imonth, 1), day: coalesce(i2.iday, 1)}) <= date1 + duration({days: $days})
+        AND date({
+            year: i2.iyear, 
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) >= date1
+        AND date({
+            year: i2.iyear, 
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
+        }) <= date1 + duration({days: $days})
         RETURN DISTINCT i1.gname as group_name,
                collect(DISTINCT i1.region_txt) + collect(DISTINCT i2.region_txt) as regions,
                count(DISTINCT i1) + count(DISTINCT i2) as total_attacks
@@ -283,8 +321,8 @@ class Neo4jTerrorismDB:
         AND i1.iyear IS NOT NULL
         WITH i1, date({
             year: i1.iyear,
-            month: CASE WHEN i1.imonth = 0 THEN 1 ELSE i1.imonth END,
-            day: CASE WHEN i1.iday = 0 THEN 1 ELSE i1.iday END
+            month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
         }) AS date1
         MATCH (i2:Incident)
         WHERE i2.targtype1_txt = i1.targtype1_txt
@@ -294,13 +332,13 @@ class Neo4jTerrorismDB:
         AND i2.iyear IS NOT NULL
         AND date({
             year: i2.iyear,
-            month: CASE WHEN i2.imonth = 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday = 0 THEN 1 ELSE i2.iday END
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) > date1
         AND date({
             year: i2.iyear,
-            month: CASE WHEN i2.imonth = 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday = 0 THEN 1 ELSE i2.iday END
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) <= date1 + duration({hours: $hours})
         RETURN i1.gname as first_group,
                i2.gname as second_group,
@@ -311,8 +349,8 @@ class Neo4jTerrorismDB:
                    date1,
                    date({
                        year: i2.iyear,
-                       month: CASE WHEN i2.imonth = 0 THEN 1 ELSE i2.imonth END,
-                       day: CASE WHEN i2.iday = 0 THEN 1 ELSE i2.iday END
+                       month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+                       day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
                    })
                ).hours as hours_between
         ORDER BY hours_between
@@ -332,8 +370,8 @@ class Neo4jTerrorismDB:
         AND i1.iyear IS NOT NULL
         WITH i1, date({
             year: i1.iyear,
-            month: CASE WHEN i1.imonth = 0 THEN 1 ELSE i1.imonth END,
-            day: CASE WHEN i1.iday = 0 THEN 1 ELSE i1.iday END
+            month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
         }) AS date1
         MATCH (i2:Incident)
         WHERE i2.city = i1.city
@@ -342,13 +380,13 @@ class Neo4jTerrorismDB:
         AND i2.iyear IS NOT NULL
         AND date({
             year: i2.iyear,
-            month: CASE WHEN i2.imonth = 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday = 0 THEN 1 ELSE i2.iday END
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) >= date1
         AND date({
             year: i2.iyear,
-            month: CASE WHEN i2.imonth = 0 THEN 1 ELSE i2.imonth END,
-            day: CASE WHEN i2.iday = 0 THEN 1 ELSE i2.iday END
+            month: CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) <= date1 + duration({hours: $hours})
         WITH i1, i1.city as city, 
              collect(DISTINCT i2.gname) as groups,
@@ -414,8 +452,8 @@ class Neo4jTerrorismDB:
         WHERE i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
         WITH i1, date({
             year: i1.iyear,
-            month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
-            day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+            month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
         }) AS date1
         
         MATCH (i2:Incident)
@@ -424,17 +462,17 @@ class Neo4jTerrorismDB:
         AND i2.gname <> 'Unknown'
         AND date({
             year: i2.iyear,
-            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) >= date1
         AND date({
             year: i2.iyear,
-            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) <= date1 + duration({days: $days})
         
         WITH i1, i2,
-            // Calculate weighted similarity components
+            // Calculate weighted similarity components with null handling
             (CASE 
                 WHEN i1.weaptype1_txt = i2.weaptype1_txt 
                 AND i1.weaptype1_txt IS NOT NULL THEN 0.35
@@ -456,21 +494,40 @@ class Neo4jTerrorismDB:
                 ELSE 0 
             END) AS similarity_score,
             
-            i1.weaptype1_txt = i2.weaptype1_txt AS weapon_match,
-            i1.targtype1_txt = i2.targtype1_txt AS target_match,
-            i1.region_txt = i2.region_txt AS region_match,
-            i1.country_txt = i2.country_txt AS country_match,
+            CASE 
+                WHEN i1.weaptype1_txt IS NOT NULL AND i2.weaptype1_txt IS NOT NULL 
+                THEN i1.weaptype1_txt = i2.weaptype1_txt 
+                ELSE false 
+            END AS weapon_match,
+            
+            CASE 
+                WHEN i1.targtype1_txt IS NOT NULL AND i2.targtype1_txt IS NOT NULL 
+                THEN i1.targtype1_txt = i2.targtype1_txt 
+                ELSE false 
+            END AS target_match,
+            
+            CASE 
+                WHEN i1.region_txt IS NOT NULL AND i2.region_txt IS NOT NULL 
+                THEN i1.region_txt = i2.region_txt 
+                ELSE false 
+            END AS region_match,
+            
+            CASE 
+                WHEN i1.country_txt IS NOT NULL AND i2.country_txt IS NOT NULL 
+                THEN i1.country_txt = i2.country_txt 
+                ELSE false 
+            END AS country_match,
             
             duration.between(
                 date({
                     year: i1.iyear,
-                    month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
-                    day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+                    month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+                    day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
                 }),
                 date({
                     year: i2.iyear,
-                    month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-                    day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+                    month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+                    day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
                 })
             ).days AS days_between
         
@@ -488,49 +545,56 @@ class Neo4jTerrorismDB:
                  attack1: {
                      date: date({
                          year: i1.iyear,
-                         month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
-                         day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+                         month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+                         day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
                      }),
-                     location: i1.city + ', ' + i1.country_txt,
-                     weapon: i1.weaptype1_txt,
-                     target: i1.targtype1_txt
+                     location: CASE WHEN i1.city IS NULL THEN 'Unknown' ELSE i1.city END + ', ' + 
+                               CASE WHEN i1.country_txt IS NULL THEN 'Unknown' ELSE i1.country_txt END,
+                     weapon: CASE WHEN i1.weaptype1_txt IS NULL THEN 'Unknown' ELSE i1.weaptype1_txt END,
+                     target: CASE WHEN i1.targtype1_txt IS NULL THEN 'Unknown' ELSE i1.targtype1_txt END
                  },
                  attack2: {
                      date: date({
                          year: i2.iyear,
-                         month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-                         day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+                         month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+                         day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
                      }),
-                     location: i2.city + ', ' + i2.country_txt,
-                     weapon: i2.weaptype1_txt,
-                     target: i2.targtype1_txt
+                     location: CASE WHEN i2.city IS NULL THEN 'Unknown' ELSE i2.city END + ', ' + 
+                               CASE WHEN i2.country_txt IS NULL THEN 'Unknown' ELSE i2.country_txt END,
+                     weapon: CASE WHEN i2.weaptype1_txt IS NULL THEN 'Unknown' ELSE i2.weaptype1_txt END,
+                     target: CASE WHEN i2.targtype1_txt IS NULL THEN 'Unknown' ELSE i2.targtype1_txt END
                  }
              }) AS incident_pairs
 
-        // Unwind the pairs to calculate true average
         UNWIND incident_pairs AS pair
         WITH group1, group2, incident_pairs,
-             avg(pair.similarity_score) AS avg_similarity,
-             avg(pair.days_between) AS avg_days_between,
-             collect(DISTINCT CASE WHEN pair.weapon_match THEN 'weapon' END) AS weapon_matches,
-             collect(DISTINCT CASE WHEN pair.target_match THEN 'target' END) AS target_matches,
-             collect(DISTINCT CASE WHEN pair.region_match THEN 'region' END) AS region_matches,
-             collect(DISTINCT CASE WHEN pair.country_match THEN 'country' END) AS country_matches
+             avg(CASE WHEN pair.similarity_score IS NULL THEN 0 ELSE pair.similarity_score END) AS avg_similarity,
+             avg(CASE WHEN pair.days_between IS NULL THEN 0 ELSE pair.days_between END) AS avg_days_between,
+             collect(DISTINCT CASE WHEN pair.weapon_match THEN 'weapon' ELSE '' END) AS weapon_matches_raw,
+             collect(DISTINCT CASE WHEN pair.target_match THEN 'target' ELSE '' END) AS target_matches_raw,
+             collect(DISTINCT CASE WHEN pair.region_match THEN 'region' ELSE '' END) AS region_matches_raw,
+             collect(DISTINCT CASE WHEN pair.country_match THEN 'country' ELSE '' END) AS country_matches_raw
         
         WITH group1, group2, incident_pairs,
              round(10 * avg_similarity) / 10.0 AS similarity_score,
              avg_days_between,
-             [x IN weapon_matches WHERE x IS NOT NULL] + 
-             [x IN target_matches WHERE x IS NOT NULL] +
-             [x IN region_matches WHERE x IS NOT NULL] +
-             [x IN country_matches WHERE x IS NOT NULL] AS matches
+             [x IN weapon_matches_raw WHERE x <> ''] AS weapon_matches,
+             [x IN target_matches_raw WHERE x <> ''] AS target_matches,
+             [x IN region_matches_raw WHERE x <> ''] AS region_matches,
+             [x IN country_matches_raw WHERE x <> ''] AS country_matches
+        
+        WITH group1, group2, incident_pairs, similarity_score, avg_days_between,
+             weapon_matches + target_matches + region_matches + country_matches AS matches
         
         RETURN 
             group1,
             group2,
             similarity_score,
             avg_days_between,
-            reduce(s = '', m IN matches | s + (CASE WHEN s = '' THEN '' ELSE ' ' END) + m) AS matching_criteria,
+            CASE WHEN size(matches) = 0 
+                 THEN '' 
+                 ELSE reduce(s = '', m IN matches | s + (CASE WHEN s = '' THEN '' ELSE ' ' END) + m) 
+            END AS matching_criteria,
             incident_pairs AS similar_attacks
         
         ORDER BY similarity_score DESC, avg_days_between
@@ -554,8 +618,8 @@ class Neo4jTerrorismDB:
         WHERE i1.gname IS NOT NULL AND i1.gname <> 'Unknown'
         WITH i1, date({
             year: i1.iyear,
-            month: coalesce(CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END, 1),
-            day: coalesce(CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END, 1)
+            month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+            day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
         }) AS date1
         
         MATCH (i2:Incident)
@@ -565,13 +629,13 @@ class Neo4jTerrorismDB:
         AND i1.eventid < i2.eventid
         AND date({
             year: i2.iyear,
-            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) >= date1
         AND date({
             year: i2.iyear,
-            month: coalesce(CASE WHEN i2.imonth <= 0 THEN 1 ELSE i2.imonth END, 1),
-            day: coalesce(CASE WHEN i2.iday <= 0 THEN 1 ELSE i2.iday END, 1)
+            month: CASE WHEN i2.imonth IS NULL OR i2.imonth <= 0 THEN 1 ELSE i2.imonth END,
+            day: CASE WHEN i2.iday IS NULL OR i2.iday <= 0 THEN 1 ELSE i2.iday END
         }) <= date1 + duration({days: $days})
         
         WITH i1, i2,
@@ -594,10 +658,7 @@ class Neo4jTerrorismDB:
         })
 
     def find_indirect_connections(self, group1, group2, max_intermediaries=2, days_window=60):
-        """Find potential indirect connections between two groups through intermediaries.
-        
-        First ensures similarity relationships exist, then finds paths through them.
-        """
+        """Find potential indirect connections between two groups through intermediaries."""
         # First create/update similarity relationships
         self.create_similarity_relationships()
         
@@ -611,13 +672,13 @@ class Neo4jTerrorismDB:
             duration.between(
                 date({
                     year: i1.iyear,
-                    month: CASE WHEN i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
-                    day: CASE WHEN i1.iday <= 0 THEN 1 ELSE i1.iday END
+                    month: CASE WHEN i1.imonth IS NULL OR i1.imonth <= 0 THEN 1 ELSE i1.imonth END,
+                    day: CASE WHEN i1.iday IS NULL OR i1.iday <= 0 THEN 1 ELSE i1.iday END
                 }),
                 date({
                     year: x.iyear,
-                    month: CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END,
-                    day: CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END
+                    month: CASE WHEN x.imonth IS NULL OR x.imonth <= 0 THEN 1 ELSE x.imonth END,
+                    day: CASE WHEN x.iday IS NULL OR x.iday <= 0 THEN 1 ELSE x.iday END
                 })
             ).days <= $days
         )
@@ -626,8 +687,8 @@ class Neo4jTerrorismDB:
                [x IN nodes(path) | {
                    date: date({
                        year: x.iyear,
-                       month: coalesce(CASE WHEN x.imonth <= 0 THEN 1 ELSE x.imonth END, 1),
-                       day: coalesce(CASE WHEN x.iday <= 0 THEN 1 ELSE x.iday END, 1)
+                       month: CASE WHEN x.imonth IS NULL OR x.imonth <= 0 THEN 1 ELSE x.imonth END,
+                       day: CASE WHEN x.iday IS NULL OR x.iday <= 0 THEN 1 ELSE x.iday END
                    }),
                    location: x.city + ', ' + x.country_txt,
                    weapon: x.weaptype1_txt,
