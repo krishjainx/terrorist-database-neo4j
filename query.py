@@ -74,7 +74,7 @@ Cool Things I Could Do:
 """
 
 class Neo4jTerrorismDB:
-    def __init__(self, uri, user, password):
+    def __init__(self, uri="bolt://localhost:7687", user="neo4j", password="password"):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
 
     def close(self):
@@ -82,8 +82,91 @@ class Neo4jTerrorismDB:
 
     def run_query(self, query, parameters=None):
         with self.driver.session() as session:
-            result = session.run(query, parameters)
+            result = session.run(query, parameters or {})
             return [record.data() for record in result]
+
+    @staticmethod
+    def _incident_date(alias="i"):
+        """Return a Cypher snippet that converts y/m/d on node `alias` to a date()."""
+        return f"""
+            date({{
+                year: {alias}.iyear,
+                month: CASE WHEN {alias}.imonth IS NULL OR {alias}.imonth <= 0
+                            THEN 1 ELSE {alias}.imonth END,
+                day:   CASE WHEN {alias}.iday   IS NULL OR {alias}.iday   <= 0
+                            THEN 1 ELSE {alias}.iday   END
+            }})
+        """
+
+    def find_time_ordered_path(
+        self,
+        start_label: str,
+        end_label: str,
+        max_path_length: int = 3,
+        time_window_minutes: int = 120,
+    ):
+        """
+        Return paths from `start_label` to `end_label` such that:
+
+        * path length ≤ L (`max_path_length`)
+        * timestamps of successive incidents strictly increase
+        * every hop occurs ≤ T minutes after the previous hop (`time_window_minutes`)
+        * traversal is along :SIMILAR_ATTACK relationships that you have already
+          created in your graph.
+
+        """
+        query = f"""
+        // -------------- collect possible start incidents ------------------
+        MATCH (start:Incident)
+        WHERE start.targtype1_txt = $start_label
+          AND start.iyear  IS NOT NULL
+          AND start.imonth IS NOT NULL AND start.imonth > 0
+          AND start.iday   IS NOT NULL AND start.iday   > 0
+        WITH start LIMIT 200   // cap fan-out for performance
+
+        // -------------- traverse up to L hops -----------------------------
+        MATCH p = (start)-[:SIMILAR_ATTACK*1..{max_path_length}]->(end:Incident)
+        WHERE end.targtype1_txt = $end_label
+          AND end <> start
+          AND end.iyear  IS NOT NULL AND end.imonth IS NOT NULL AND end.iday IS NOT NULL
+
+        WITH p, nodes(p) AS incs
+
+        // -------------- make sure every node has a clean date -------------
+        WHERE all(i IN incs WHERE i.iyear IS NOT NULL
+                               AND i.imonth IS NOT NULL AND i.imonth > 0
+                               AND i.iday   IS NOT NULL AND i.iday   > 0)
+
+        // convert to Cypher date list
+        WITH p, [i IN incs | {self._incident_date("i")}] AS ts, incs
+
+        // -------------- ordering & window constraints ---------------------
+        WHERE size(ts) < 2
+           OR reduce(ok = true, idx IN range(0, size(ts)-2) |
+                        ok AND ts[idx] < ts[idx+1]
+                           AND duration.between(ts[idx],ts[idx+1]).minutes
+                               <= $time_window_minutes)
+
+        RETURN
+            length(p) AS path_len,
+            [n IN incs | {{
+                id: n.eventid,
+                group: n.gname,
+                date: {self._incident_date("n")},
+                city: n.city,
+                country: n.country_txt
+            }}] AS incidents
+        ORDER BY path_len, incidents[0].date
+        LIMIT 25
+        """
+        return self.run_query(
+            query,
+            {
+                "start_label": start_label,
+                "end_label":   end_label,
+                "time_window_minutes": time_window_minutes,
+            },
+        )
 
     def get_groups_in_regions(self, region1, region2, months=6):
         """Find groups that operated in both specified regions within a time period."""
@@ -794,6 +877,17 @@ if __name__ == "__main__":
             print(f"Connection path: {' -> '.join(r['groups'])}")
             for attack in r['attacks']:
                 print(f"  {attack['date']}: {attack['location']}")
+
+        # Demo the new time-ordered path query
+        print("\n15. Demo: time-ordered path (L=3, T=120 min)")
+        paths = db.find_time_ordered_path(
+            "Police",        # targtype1_txt of first "person"
+            "Military",      # targtype1_txt of second "person"
+            max_path_length=3,
+            time_window_minutes=120,
+        )
+        for p in paths:
+            print(p)
 
     finally:
         db.close()
