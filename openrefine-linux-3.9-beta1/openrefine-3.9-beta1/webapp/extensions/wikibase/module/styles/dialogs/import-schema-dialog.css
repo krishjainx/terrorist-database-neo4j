@@ -1,9 +1,0 @@
-.wikibase-invalid-schema {
-  margin-top: 10px;
-  color: var(--error-red);
-}
-
-.wikibase-schema-textarea {
-  width: 100%;
-  height: 160px;
-}
