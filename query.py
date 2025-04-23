@@ -104,12 +104,16 @@ class Neo4jTerrorismDB:
         end_label: str,
         max_path_length: int = 3,
         time_window_minutes: int = 120,
+        overall_start_date: str | None = None,
+        overall_end_date: str | None = None,
     ):
         """
         Return paths from `start_label` to `end_label` such that:
 
         * path length ≤ L (`max_path_length`)
         * timestamps of successive incidents strictly increase
+        * first incident date ≥ `overall_start_date` (if provided)
+        * last incident date ≤ `overall_end_date` (if provided)
         * every hop occurs ≤ T minutes after the previous hop (`time_window_minutes`)
         * traversal is along :SIMILAR_ATTACK relationships that you have already
           created in your graph.
@@ -146,6 +150,8 @@ class Neo4jTerrorismDB:
                         ok AND ts[idx] < ts[idx+1]
                            AND duration.between(ts[idx],ts[idx+1]).minutes
                                <= $time_window_minutes)
+                       AND ($overall_start_date IS NULL OR ts[0] >= date($overall_start_date))
+                       AND ($overall_end_date   IS NULL OR ts[size(ts)-1] <= date($overall_end_date))
 
         RETURN
             length(p) AS path_len,
@@ -165,6 +171,8 @@ class Neo4jTerrorismDB:
                 "start_label": start_label,
                 "end_label":   end_label,
                 "time_window_minutes": time_window_minutes,
+                "overall_start_date": overall_start_date,
+                "overall_end_date":   overall_end_date,
             },
         )
 
@@ -879,12 +887,14 @@ if __name__ == "__main__":
                 print(f"  {attack['date']}: {attack['location']}")
 
         # Demo the new time-ordered path query
-        print("\n15. Demo: time-ordered path (L=3, T=120 min)")
+        print("\n15. Demo: time-ordered path (L=3, T=120 min, Range: 1970-1971)")
         paths = db.find_time_ordered_path(
             "Police",        # targtype1_txt of first "person"
             "Military",      # targtype1_txt of second "person"
             max_path_length=3,
             time_window_minutes=120,
+            overall_start_date="1970-01-01",
+            overall_end_date="1971-12-31",
         )
         for p in paths:
             print(p)
